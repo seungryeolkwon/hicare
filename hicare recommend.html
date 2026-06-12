@@ -398,8 +398,9 @@ function renderResults() {
     '라이트 플러스':'12개월마다 방문 케어 + 36개월마다 전면 패널 세척',
     '플래티넘':'가장 프리미엄한 케어 서비스','스탠다드':'기본 케어 서비스',
   };
-  document.getElementById('resultList').innerHTML = top.map((p,i) => {
+  window._buildCard = function(p, i) {
     const ranks = ['🥇 가장 추천드려요','🥈 두 번째 추천','🥉 세 번째 추천'];
+    const rankHtml = i < 3 ? `<div class="prod-rank">${ranks[i]}</div>` : '';
     const featTagsHtml = FEATS.map(f => {
       const has = f.check ? f.check(p) : p.features[f.key];
       const needKey = f.key==='energy1'?'energy':f.key;
@@ -411,8 +412,6 @@ function renderResults() {
     const imgSrc = getProductImage(p.category);
     const wallSrc = (p.type === '2in1' && imgSrc) ? WALL_IMAGE : null;
     const is2in1 = p.type === '2in1' && imgSrc;
-
-    // 이미지 영역 — 2in1이면 슬라이더, 아니면 단일 이미지
     const imageHtml = is2in1 ? `
       <div class="img-slider" id="slider_${i}"
            data-idx="0"
@@ -453,11 +452,12 @@ function renderResults() {
     const giftHtml = gift > 0 ? `<div style="display:inline-flex;align-items:center;gap:5px;background:#fff7e6;border:1.5px solid #f59e0b;color:#92400e;font-size:12px;font-weight:800;padding:4px 10px;border-radius:20px;margin-bottom:10px;">🎁 ${gift}만원 상품권 증정</div>` : '';
     return `<div class="prod-card" id="card_${i}">
       ${imageHtml}
-      <div class="prod-card-top"><div class="prod-rank">${ranks[i]}</div>${giftHtml}<div class="prod-name">${p.category}</div><div class="prod-why">💡 ${whyText}</div><div class="feat-tags">${featTagsHtml}</div></div>
+      <div class="prod-card-top">${rankHtml}${giftHtml}<div class="prod-name">${p.category}</div><div class="prod-why">💡 ${whyText}</div><div class="feat-tags">${featTagsHtml}</div></div>
       <div class="plan-section"><div class="plan-section-title">💳 관리 서비스 선택 (72개월 약정 · 월 구독료)</div>${plansHtml}</div>
       <div class="select-bar"><button class="select-plan-btn" onclick="selectProduct(${i},event)">이 제품으로 정할게요</button></div>
     </div>`;
-  }).join('');
+  };
+  document.getElementById('resultList').innerHTML = top.map((p,i) => window._buildCard(p,i)).join('');
   // 더보기 버튼
   const remaining = window._allResults.length - 3;
   if (remaining > 0) {
@@ -466,31 +466,13 @@ function renderResults() {
 }
 function showMoreResults() {
   const all = window._allResults;
-  const ranks = ['🥇 가장 추천드려요','🥈 두 번째 추천','🥉 세 번째 추천'];
-  const FEATS = [
-    {key:'indirect',label:'찬바람 안 맞기',icon:'🌬️'},
-    {key:'uv',label:'살균·위생',icon:'🦠'},
-    {key:'air_clean',label:'공기청정',icon:'🍃'},
-    {key:'energy1',label:'전기세 절약',icon:'⚡',check:p=>p.features.energy===1},
-    {key:'heating',label:'냉난방 겸용',icon:'🌡️'},
-  ];
-  const moreHtml = all.slice(3).map((p, idx) => {
-    const i = idx + 3;
-    const plan = p.plans[1] || p.plans[0];
-    const gift = getGiftCard(p.category, p.type);
-    const giftHtml = gift > 0 ? `<div style="display:inline-flex;align-items:center;gap:5px;background:#fff7e6;border:1.5px solid #f59e0b;color:#92400e;font-size:12px;font-weight:800;padding:4px 10px;border-radius:20px;margin-bottom:8px;">🎁 ${gift}만원 상품권 증정</div>` : '';
-    const featTagsHtml = FEATS.map(f => {
-      const has = f.check ? f.check(p) : p.features[f.key];
-      if (!has) return '';
-      return `<span class="feat-tag">${f.icon} ${f.label}</span>`;
-    }).filter(Boolean).join('');
-    return `<div class="prod-card" id="card_${i}" style="margin-top:12px">
-      <div class="prod-card-top">${giftHtml}<div class="prod-name">${p.category}</div><div class="feat-tags">${featTagsHtml}</div>
-      <div style="margin-top:8px;font-size:15px;font-weight:800">${plan.monthly_72.toLocaleString()}원/월~</div></div>
-      <div class="select-bar"><button class="select-plan-btn" onclick="window._results.push(window._allResults[${i}]);selectProduct(${i},event)">이 제품으로 정할게요</button></div>
-    </div>`;
-  }).join('');
+  // 4위 이상 카드를 상위 3개와 동일한 풀카드로 추가
+  const moreHtml = all.slice(3).map((p, idx) => window._buildCard(p, idx + 3)).join('');
   document.getElementById('showMoreBtn').outerHTML = moreHtml;
+  // 더보기로 펼친 제품도 선택 가능하도록 _results 갱신
+  window._results = all.slice();
+}
+function selectProduct(idx, e) {
   e.stopPropagation();
   const p = window._results[idx];
   state.selected = p;
