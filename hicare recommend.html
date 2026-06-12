@@ -250,13 +250,20 @@ const CATEGORY_IMAGES = {
 };
 function getProductImage(c){ return CATEGORY_IMAGES[c] || ''; }
 
-// 🎁 상품권 매핑 (시리즈 + 타입 기준)
+// 🎁 상품권 매핑 (PPT 기준: 타워/뷰 구분)
 function getGiftCard(category, type) {
   const c = category, t = type;
-  if (c.includes('9시리즈')) return t === '2in1' ? 20 : 15;
-  if (c.includes('7시리즈') || c.includes('5시리즈')) return t === '2in1' ? 15 : 10;
-  if (c.includes('6시리즈') || (c.includes('뷰') && c.includes('5시리즈'))) return t === '2in1' ? 10 : 5;
+  const isStand = (t !== '2in1' && t !== '벽걸이'); // 스탠드(싱글) 여부
   if (t === '벽걸이') return 0; // 벽걸이 미운영
+  // 타워 계열
+  if (c.includes('타워')) {
+    if (c.includes('9시리즈')) return t === '2in1' ? 20 : 15;
+    if (c.includes('7시리즈') || c.includes('5시리즈')) return t === '2in1' ? 15 : 10;
+  }
+  // 뷰 계열 6·5시리즈
+  if (c.includes('뷰') && (c.includes('6시리즈') || c.includes('5시리즈'))) {
+    return t === '2in1' ? 10 : 5;
+  }
   return 5; // 그 외 2in1/스탠드
 }
 
@@ -354,7 +361,10 @@ function scoreProduct(p) {
   // base만 선택된 경우(특정 조건 없음) → 인기/대표 모델 우선 (가성비 + 기능 균형)
   const realNeeds = [...needs].filter(n=>n!=='base');
   if (realNeeds.length === 0) {
-    score = (f.uv?15:0) + (f.air_clean?10:0) + (f.energy===1?15:0) - p.min_price/20000;
+    score = -p.min_price;
+  } else {
+    // 매칭 점수 우선, 동점이면 가격 낮은 순
+    score = score * 1000000 - p.min_price;
   }
   return { ...p, score, matched };
 }
@@ -363,11 +373,9 @@ function renderResults() {
   const scored = pool.map(scoreProduct).sort((a,b)=>b.score-a.score);
   let top = scored.slice(0,3);
   let isFallback = false;
-  // 점수가 모두 음수면(조건 과다) 설치 위치만 맞는 대안 제시
-  if (top.length > 0 && top[0].score < 0) {
-    isFallback = true;
-  }
+  if (top.length > 0 && top[0].matched.length === 0 && [...state.needs].filter(n=>n!=='base').length > 0) { isFallback = true; }
   window._results = top;
+  window._allResults = scored;
   const tags = [`📍 ${PLACE_LABELS[state.place]}`];
   if (state.heating) tags.push('🌡️ 냉난방');
   state.needs.forEach(n => { if(n!=='base' && NEED_LABELS[n]) tags.push(NEED_LABELS[n]); });
@@ -450,8 +458,39 @@ function renderResults() {
       <div class="select-bar"><button class="select-plan-btn" onclick="selectProduct(${i},event)">이 제품으로 정할게요</button></div>
     </div>`;
   }).join('');
+  // 더보기 버튼
+  const remaining = window._allResults.length - 3;
+  if (remaining > 0) {
+    document.getElementById('resultList').innerHTML += `<button id="showMoreBtn" onclick="showMoreResults()" style="width:100%;padding:14px;margin-top:8px;border:1.5px solid #e5e5e5;border-radius:14px;background:white;font-size:14px;font-weight:700;color:#444;cursor:pointer;">다른 제품 더 보기 (${remaining}개 더)</button>`;
+  }
 }
-function selectProduct(idx, e) {
+function showMoreResults() {
+  const all = window._allResults;
+  const ranks = ['🥇 가장 추천드려요','🥈 두 번째 추천','🥉 세 번째 추천'];
+  const FEATS = [
+    {key:'indirect',label:'찬바람 안 맞기',icon:'🌬️'},
+    {key:'uv',label:'살균·위생',icon:'🦠'},
+    {key:'air_clean',label:'공기청정',icon:'🍃'},
+    {key:'energy1',label:'전기세 절약',icon:'⚡',check:p=>p.features.energy===1},
+    {key:'heating',label:'냉난방 겸용',icon:'🌡️'},
+  ];
+  const moreHtml = all.slice(3).map((p, idx) => {
+    const i = idx + 3;
+    const plan = p.plans[1] || p.plans[0];
+    const gift = getGiftCard(p.category, p.type);
+    const giftHtml = gift > 0 ? `<div style="display:inline-flex;align-items:center;gap:5px;background:#fff7e6;border:1.5px solid #f59e0b;color:#92400e;font-size:12px;font-weight:800;padding:4px 10px;border-radius:20px;margin-bottom:8px;">🎁 ${gift}만원 상품권 증정</div>` : '';
+    const featTagsHtml = FEATS.map(f => {
+      const has = f.check ? f.check(p) : p.features[f.key];
+      if (!has) return '';
+      return `<span class="feat-tag">${f.icon} ${f.label}</span>`;
+    }).filter(Boolean).join('');
+    return `<div class="prod-card" id="card_${i}" style="margin-top:12px">
+      <div class="prod-card-top">${giftHtml}<div class="prod-name">${p.category}</div><div class="feat-tags">${featTagsHtml}</div>
+      <div style="margin-top:8px;font-size:15px;font-weight:800">${plan.monthly_72.toLocaleString()}원/월~</div></div>
+      <div class="select-bar"><button class="select-plan-btn" onclick="window._results.push(window._allResults[${i}]);selectProduct(${i},event)">이 제품으로 정할게요</button></div>
+    </div>`;
+  }).join('');
+  document.getElementById('showMoreBtn').outerHTML = moreHtml;
   e.stopPropagation();
   const p = window._results[idx];
   state.selected = p;
